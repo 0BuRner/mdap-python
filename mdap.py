@@ -5,7 +5,7 @@
 # MDAP - Multicast ? ? Protocol
 # For Speedtouch/Thomson/Technicolor MediaAccess router
 #
-# MDAP is a protocol used by Thompson CPE devices to issue commands to CPEs (called ants)
+# MDAP is a protocol used by CPE devices from these brands to issue commands to CPEs (called ants)
 # using UDP multicast address 224.0.0.103 and port 3235 registered by IANA
 #
 #
@@ -74,25 +74,30 @@ class MDAP_Sender:
         self.__sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MCAST_TTL)
         self.__sock.bind((ip, 0)) if ip else None  # Send packet from this interface if multiple interfaces are up | Windows only
 
-    def send_search(self):
-        self.__send("ANT-SEARCH MDAP/1.1\r\n")
+    def send_search(self, version='1.2'):
+        self.send_raw("ANT-SEARCH", version)
 
-    def send_info(self, ant, seq, login=None, password=None):
-        cmd = "INFO MDAP/1.2\r\nSEQ-NR:{}\r\nTO-ANT:{}\r\n".format(seq, ant)
-        cmd += "USER-ID:{}\r\nUSER-PWD:{}\r\n".format(login, password) if login or password else ''
-        self.__send(cmd)
+    def send_info(self, ant, seq, login=None, password=None, version='1.2'):
+        self.send_raw("INFO", version, seq, ant, None, login, password)
 
-    def send_exec(self, cmd, ant, seq, login=None, password=None):
-        cmd = "EXEC-CLI MDAP/1.2\r\nCLI-CMD:{}\r\nSEQ-NR:{}\r\nTO-ANT:{}\r\n".format(cmd, seq, ant)
-        cmd += "USER-ID:{}\r\nUSER-PWD:{}\r\n".format(login, password) if login or password else ''
-        self.__send(cmd)
+    def send_exec(self, cmd, ant, seq, login=None, password=None, version='1.2'):
+        self.send_raw("EXEC-CLI", version, seq, ant, cmd, login, password)
+
+    def send_raw(self, verb=None, version=None, seq=None, ant=None, cmd=None, login=None, password=None):
+        raw = "{} MDAP/{}\r\n".format(verb, version) if verb and version else ''
+        raw += "CLI-CMD:{}\r\n".format(cmd) if cmd else ''
+        raw += "SEQ-NR:{}\r\n".format(seq) if seq else ''
+        raw += "TO-ANT:{}\r\n".format(ant) if ant else ''
+        raw += "USER-ID:{}\r\n".format(login) if login else ''
+        raw += "USER-PWD:{}\r\n".format(password) if password else ''
+        self.__send(raw)
 
     def __send(self, message):
-        self.__sock.sendto(self.prepare(message), (MCAST_GROUP, MCAST_PORT))
+        self.__sock.sendto(self.append_checksum(message), (MCAST_GROUP, MCAST_PORT))
         time.sleep(SEND_TIMEOUT)  # add timeout waiting for devices response
 
     @staticmethod
-    def prepare(message):
+    def append_checksum(message):
         res = 0
         for c in message:
             res ^= ord(c)
@@ -274,21 +279,10 @@ class MDAP:
         else:
             logging.error('Unknown target')
 
-##############################################################
+    def send_raw(self, verb, ver, ant, seq, login=None, password=None):
+        self.__sender.send_raw(verb, ver, ant, seq, login, password)
 
-# TODO join() threads or synchronous
-# TODO active/passive discovery
-# TODO Manage MDAP protocol version 1.0, 1.1, 1.2
-# TODO Manage different IP address
-# TODO improve multiplatform (SO_PORTREUSE BSD cfr miranda)
-# TODO better error management
-# TODO try different brute-force methods
-# TODO set timeout, retry parameters to discover command
-# TODO implement save/load ants info
-# TODO check if resend user/pass is needed in exec cmd
-# TODO SEQ-NR:-3 ==> invalid/unknown command
-# TODO shell: navigate through commands
-# TODO shell: change info with login
+##############################################################
 
 
 def interactive():
@@ -329,7 +323,6 @@ def interactive():
             else:
                 logging.info("Wrong parameters number")
         elif method == "shell":
-            os.system('cls' if os.name == 'nt' else 'clear')
             target = mdap.get_target()
             # TODO check if ant.auth is OK
             while True:
@@ -355,20 +348,14 @@ def interactive():
         time.sleep(SHELL_TIMEOUT)
 
 if __name__ == '__main__':
-    # logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)-8s (%(threadName)s) %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)-8s (%(threadName)s) %(message)s')
 
     if len(sys.argv) > 1:
         m = MDAP('192.168.1.6')
         m.discover()
         m.set_target('10.0.0.18')
-
-        m.info('test', 'tesr')
-        m.info('test', 'tess')
-        m.info('test', 'tesv')
-        m.info('test', 'tesw')
-        m.info('test', 'okp' + chr(98))
-
-        m.thread_listener.join()
+        m.info('test', 'test')
+        time.sleep(5)
     else:
         interactive()
 
