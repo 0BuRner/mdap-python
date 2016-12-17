@@ -345,7 +345,16 @@ def interactive():
                 logging.info("Wrong parameters number")
         elif method == "shell":
             target = mdap.get_target()
-            # TODO check if ant.auth is OK
+
+            if not target.auth:
+                login = c[1] if len(c) >= 2 else None
+                pwd = c[2] if len(c) >= 3 else None
+                target.credentials = (login, pwd)
+
+                if login is None:
+                    logging.info("Credentials are needed to enter interactive shell mode")
+                    continue
+
             while True:
                 cmd = raw_input("{}@{}: ".format(target['credentials'][0], target['ip']))
                 if cmd in ["quit", "exit"]:
@@ -353,7 +362,7 @@ def interactive():
                 if not len(cmd):
                     continue
 
-                mdap.exec_cmd(cmd)
+                mdap.exec_cmd(cmd, target.credentials[0], target.credentials[1])
                 time.sleep(SHELL_TIMEOUT)
         elif method == "save":
             logging.exception(NotImplementedError)
