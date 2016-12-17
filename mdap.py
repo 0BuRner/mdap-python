@@ -26,7 +26,6 @@
 #
 ##############################################################
 import logging
-import os
 import platform
 import pprint
 import re
@@ -61,6 +60,9 @@ class MDAP_Ant():
     def __getitem__(self, key):
         return getattr(self, key)
 
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
     def __repr__(self):
         return pprint.pformat(vars(self))
 
@@ -77,18 +79,18 @@ class MDAP_Sender:
     def send_search(self, version='1.2'):
         self.send_raw("ANT-SEARCH", version)
 
-    def send_info(self, ant, seq, login=None, password=None, version='1.2'):
-        self.send_raw("INFO", version, seq, ant, None, login, password)
+    def send_info(self, ant, seq, username=None, password=None, version='1.2'):
+        self.send_raw("INFO", version, seq, ant, None, username, password)
 
-    def send_exec(self, cmd, ant, seq, login=None, password=None, version='1.2'):
-        self.send_raw("EXEC-CLI", version, seq, ant, cmd, login, password)
+    def send_exec(self, cmd, ant, seq, username=None, password=None, version='1.2'):
+        self.send_raw("EXEC-CLI", version, seq, ant, cmd, username, password)
 
-    def send_raw(self, verb=None, version=None, seq=None, ant=None, cmd=None, login=None, password=None):
+    def send_raw(self, verb=None, version=None, seq=None, ant_id=None, cmd=None, username=None, password=None):
         raw = "{} MDAP/{}\r\n".format(verb, version) if verb and version else ''
         raw += "CLI-CMD:{}\r\n".format(cmd) if cmd else ''
         raw += "SEQ-NR:{}\r\n".format(seq) if seq else ''
-        raw += "TO-ANT:{}\r\n".format(ant) if ant else ''
-        raw += "USER-ID:{}\r\n".format(login) if login else ''
+        raw += "TO-ANT:{}\r\n".format(ant_id) if ant_id else ''
+        raw += "USER-ID:{}\r\n".format(username) if username else ''
         raw += "USER-PWD:{}\r\n".format(password) if password else ''
         self.__send(raw)
 
@@ -142,6 +144,13 @@ class MDAP_Analyzer:
     __mdap = None
     __sender = None
 
+    __errors = {
+        '-1': 'Invalid credentials',
+        '-2': 'Invalid SQ-NR sequence number',
+        '-3': 'Invalid EXEC command',
+        '-5': 'Malformed message',
+    }
+
     def __init__(self, mdap, sender):
         self.__mdap = mdap
         self.__sender = sender
@@ -153,6 +162,9 @@ class MDAP_Analyzer:
             ant_id = re.findall('ANT-ID:(.+)\r\n', message, flags=re.IGNORECASE)[0]
             ant = self.__mdap.find_ant('id', ant_id)
 
+            if ant and ant['ip'] is None:
+                ant['ip'] = address[0]
+
             if not ant:
                 ant = MDAP_Ant(ant_id, address[0])
                 self.__mdap.ants.append(ant)
@@ -161,9 +173,9 @@ class MDAP_Analyzer:
             if 'REPLY-ANT-SEARCH' in message:
                 ant.metadata = self.merge(ant.metadata, self.extract(message))
             else:
-                seq = re.findall('SEQ-NR:(.+)\r\n', message, flags=re.IGNORECASE)[0]
-                if '-' in seq:
-                    logging.info('Wrong credentials or insufficient privileges or unknown command or malformed packet')
+                seq = re.findall('SEQ-NR:(.+)\r\n', message, flags=re.IGNORECASE)[0].strip()
+                if seq[0] == '-':
+                    logging.info(self.__errors.get(seq, 'Unknown error'))
                 else:
                     ant.auth = ant.credentials
                     logging.debug('Credentials OK: {}'.format(ant.auth))
@@ -279,8 +291,17 @@ class MDAP:
         else:
             logging.error('Unknown target')
 
-    def send_raw(self, verb, ver, ant, seq, login=None, password=None):
-        self.__sender.send_raw(verb, ver, ant, seq, login, password)
+    def send_raw(self, verb, ver, ant_id, seq, cmd, username=None, password=None):
+        existing_ant = self.find_ant('id', ant_id)
+
+        ant = existing_ant if existing_ant else MDAP_Ant(ant_id, None)
+        ant.credentials = (username, password)
+        ant.last_cmd = cmd
+
+        if not existing_ant:
+            self.ants.append(ant)
+
+        self.__sender.send_raw(verb, ver, seq, ant_id, cmd, username, password)
 
 ##############################################################
 
