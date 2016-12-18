@@ -25,6 +25,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 ##############################################################
+import argparse
 import logging
 import platform
 import pprint
@@ -34,6 +35,8 @@ import struct
 import sys
 import threading
 import time
+
+MDAP_LIB_VERSION = '0.1.0'
 
 MCAST_GROUP = '224.0.0.103'
 MCAST_PORT = 3235
@@ -236,7 +239,7 @@ class MDAP:
             logging.warning(
                 "Random interface will be used to listen to MULTICAST_GROUP " + MCAST_GROUP + ".\r\n" +
                 "This program might not work.\r\n" +
-                "Use 'set interface interface_ip' in interactive mode or '-i interface_ip' in command-line arguments."
+                "Use 'set interface interface_ip' in interactive mode or '-i interface_ip' in command-line arguments.\r\n"
             )
         self.__sender = MDAP_Sender(ip)
         self.__analyzer = MDAP_Analyzer(self, self.__sender)
@@ -319,16 +322,16 @@ class MDAP:
 
 ##############################################################
 
+__log_levels = {
+    'off': logging.ERROR,
+    '-v': logging.WARNING,
+    '-vv': logging.INFO,
+    '-vvv': logging.DEBUG,
+    'on': logging.WARNING,
+}
+
 
 def interactive():
-
-    __log_levels = {
-        'on': logging.WARNING,
-        'off': logging.ERROR,
-        '-v': logging.WARNING,
-        '-vv': logging.INFO,
-        '-vvv': logging.DEBUG,
-    }
 
     mdap = MDAP()
     time.sleep(0.3)
@@ -406,16 +409,44 @@ def interactive():
 
         time.sleep(SHELL_TIMEOUT)
 
+
+def command_line(sys_args):
+    parser = argparse.ArgumentParser(description='MDAP Protocol Helper')
+    parser.add_argument('--version', action='version', version='%(prog)s ' + MDAP_LIB_VERSION)
+    parser.add_argument('-d', action='store_true', help='send ANT-SEARCH discovery packet to multicast')
+    parser.add_argument('-i', metavar='iface_ip', help='the interface used to listen and send MDAP packets')
+    parser.add_argument('-t', metavar='target', help='the target device (ant_id, ip)')
+    parser.add_argument('-m', metavar='method', choices=['info', 'exec'], help='the method to call (%(choices)s)')
+    parser.add_argument('-c', metavar='command', help='the command to execute', nargs='*')
+    parser.add_argument('-u', metavar='user')
+    parser.add_argument('-p', metavar='password')
+    parser.add_argument('-v', '--verbose', action='count', help="add more 'v' for more verbose (up to 3)")
+
+    args = parser.parse_args(sys_args)
+
+    print ''
+
+    if args.verbose:
+        logging.getLogger().setLevel(__log_levels.get('-' + ('v' * args.verbose), logging.WARNING))
+
+    mdap = MDAP(args.i)
+    if args.d:
+        mdap.discover()
+    mdap.set_target(args.t)
+    if 'info' == args.m:
+        mdap.info(args.u, args.p)
+        time.sleep(1)
+        print(mdap.ants)
+    if 'exec' == args.m:
+        mdap.exec_cmd(' '.join(args.c), args.u, args.p)
+        time.sleep(1)
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING, format='%(asctime)s:%(levelname)-8s (%(threadName)s) %(message)s')
 
-    if len(sys.argv) > 1:
-        m = MDAP('192.168.1.6')
-        m.discover()
-        m.set_target('10.0.0.18')
-        m.info('test', 'test')
-        time.sleep(5)
-    else:
+    if len(sys.argv) == 1:
         interactive()
+    else:
+        command_line(sys.argv[1:])
 
     exit(0)
