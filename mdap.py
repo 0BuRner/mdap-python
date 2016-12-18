@@ -190,7 +190,7 @@ class MDAP_Analyzer:
                         self.print_exec(message)
                         if 'DONE' not in seq:
                             # acknowledge response by resending packet with next sequence
-                            self.__sender.send_exec(ant['last_cmd'], ant.id, int(seq) + 1, ant.auth[0], ant.auth[1])
+                            self.__sender.send_exec(None, ant.id, int(seq) + 1, ant.auth[0], ant.auth[1])
 
     @staticmethod
     def extract(reply):
@@ -322,8 +322,16 @@ class MDAP:
 
 def interactive():
 
+    __log_levels = {
+        'on': logging.WARNING,
+        'off': logging.ERROR,
+        '-v': logging.WARNING,
+        '-vv': logging.INFO,
+        '-vvv': logging.DEBUG,
+    }
+
     mdap = MDAP()
-    time.sleep(0.5)
+    time.sleep(0.3)
 
     while True:
         cmd = raw_input("mdap > ")
@@ -342,6 +350,9 @@ def interactive():
                 mdap = MDAP(c[2])
             elif "target" == c[1]:
                 mdap.set_target(c[2])
+            elif "logging" == c[1]:
+                level = c[2]
+                logging.getLogger().setLevel(__log_levels.get(level, logging.WARNING))
             else:
                 logging.error("Unknown command")
         elif method == "discover":
@@ -386,6 +397,8 @@ def interactive():
             logging.exception(NotImplementedError)
         elif method == "help":
             logging.exception(NotImplementedError)
+        elif method == "show":
+            logging.exception(NotImplementedError)
         elif method == "print":
             print(mdap.ants)
         else:
@@ -394,7 +407,7 @@ def interactive():
         time.sleep(SHELL_TIMEOUT)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s:%(levelname)-8s (%(threadName)s) %(message)s')
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s:%(levelname)-8s (%(threadName)s) %(message)s')
 
     if len(sys.argv) > 1:
         m = MDAP('192.168.1.6')
