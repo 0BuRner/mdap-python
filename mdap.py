@@ -168,7 +168,7 @@ class MDAP_Analyzer:
             if not ant:
                 ant = MDAP_Ant(ant_id, address[0])
                 self.__mdap.ants.append(ant)
-                logging.info('New ANT discovered: {}'.format(ant))
+                print('New ANT discovered: {}@{}'.format(ant.id, ant.ip))
 
             if 'REPLY-ANT-SEARCH' in message:
                 ant.metadata = self.merge(ant.metadata, self.extract(message))
@@ -178,12 +178,13 @@ class MDAP_Analyzer:
                     logging.error(self.__errors.get(seq, 'Unknown error'))
                 else:
                     ant.auth = ant.credentials
-                    logging.debug('Credentials {} OK for {}@{}'.format(ant.auth, ant.id, ant.ip))
+
                     if 'REPLY-INFO' in message:
                         ant.info = self.merge(ant.info, self.extract(message))
                         if 'DONE' not in seq:
                             # acknowledge response by resending packet with next sequence
                             self.__sender.send_info(ant.id, int(seq) + 1, ant.auth[0], ant.auth[1])
+                            print("Reply data INFO received from {}@{}".format(ant.id, ant.ip))
 
                     if 'REPLY-EXEC-CLI' in message:
                         self.print_exec(message)
@@ -278,7 +279,7 @@ class MDAP:
             self.__target = None
 
         if self.__target:
-            logging.info("Set target to {}".format(ant))
+            print("Set target to {}".format(ant))
         else:
             logging.error("Unknown target. Use 'discover' or 'load' first.")
 
