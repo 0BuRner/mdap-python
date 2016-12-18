@@ -432,6 +432,8 @@ def command_line(sys_args):
     mdap = MDAP(args.i)
     if args.d:
         mdap.discover()
+        time.sleep(1)
+        print(mdap.ants)
     mdap.set_target(args.t)
     if 'info' == args.m:
         mdap.info(args.u, args.p)
