@@ -120,7 +120,7 @@ class MDAP_Listener:
             group = socket.inet_aton(MCAST_GROUP)
             interface = socket.inet_aton(ip)  # listen for multicast packets on this interface
             self.__sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, group + interface)
-            logging.debug('Listening on {}'.format(ip))
+            logging.info('Listening on {}'.format(ip))
         else:
             mreq = struct.pack("4sl", socket.inet_aton(MCAST_GROUP), socket.INADDR_ANY)
             self.__sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
@@ -162,8 +162,8 @@ class MDAP_Analyzer:
             ant_id = re.findall('ANT-ID:(.+)\r\n', message, flags=re.IGNORECASE)[0]
             ant = self.__mdap.find_ant('id', ant_id)
 
-            if ant and ant['ip'] is None:
-                ant['ip'] = address[0]
+            if ant and ant.ip is None:
+                ant.ip = address[0]
 
             if not ant:
                 ant = MDAP_Ant(ant_id, address[0])
@@ -175,20 +175,18 @@ class MDAP_Analyzer:
             else:
                 seq = re.findall('SEQ-NR:(.+)\r\n', message, flags=re.IGNORECASE)[0].strip()
                 if seq[0] == '-':
-                    logging.info(self.__errors.get(seq, 'Unknown error'))
+                    logging.error(self.__errors.get(seq, 'Unknown error'))
                 else:
                     ant.auth = ant.credentials
-                    logging.debug('Credentials OK: {}'.format(ant.auth))
+                    logging.debug('Credentials {} OK for {}@{}'.format(ant.auth, ant.id, ant.ip))
                     if 'REPLY-INFO' in message:
                         ant.info = self.merge(ant.info, self.extract(message))
-
                         if 'DONE' not in seq:
                             # acknowledge response by resending packet with next sequence
                             self.__sender.send_info(ant.id, int(seq) + 1, ant.auth[0], ant.auth[1])
 
                     if 'REPLY-EXEC-CLI' in message:
                         self.print_exec(message)
-
                         if 'DONE' not in seq:
                             # acknowledge response by resending packet with next sequence
                             self.__sender.send_exec(ant['last_cmd'], ant.id, int(seq) + 1, ant.auth[0], ant.auth[1])
@@ -234,7 +232,11 @@ class MDAP:
 
     def __init__(self, ip=None):
         if not ip and 'Windows' in platform.system():
-            logging.warning('Random interface will be used to listen to MULTICAST_GROUP ' + MCAST_GROUP)
+            logging.warning(
+                "Random interface will be used to listen to MULTICAST_GROUP " + MCAST_GROUP + ".\r\n" +
+                "This program might not work.\r\n" +
+                "Use 'set interface interface_ip' in interactive mode or '-i interface_ip' in command-line arguments."
+            )
         self.__sender = MDAP_Sender(ip)
         self.__analyzer = MDAP_Analyzer(self, self.__sender)
         self.__listener = MDAP_Listener(self.__analyzer, ip)
@@ -249,6 +251,16 @@ class MDAP:
         except Exception as e:
             logging.exception("Unable to start thread", e)
 
+    def __find_or_create_ant(self, key, value):
+        ant = self.find_ant(key, value)
+
+        # Create new ant only if ANT-ID is known
+        if not ant and key == 'id':
+            ant = MDAP_Ant(value, None)
+            self.ants.append(ant)
+
+        return ant
+
     def find_ant(self, key, value):
         return next((ant for (index, ant) in enumerate(self.ants) if ant[key] == value), False)
 
@@ -257,12 +269,18 @@ class MDAP:
         logging.debug(self.ants)
         time.sleep(timeout)
 
-    def set_target(self, ip):
-        self.__target = self.find_ant('ip', ip)
-        if self.__target:
-            logging.info("Set target to {}".format(ip))
+    def set_target(self, ant):
+        if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ant):  # Find already discovered ANT by IP
+            self.__target = self.find_ant('ip', ant)
+        elif len(ant) == 9:  # As ANT-ID is the serial-number, it should always be 9 char long
+            self.__target = self.__find_or_create_ant('id', ant)
         else:
-            logging.error('Unknown target. Discover or load data from last discover first.')
+            self.__target = None
+
+        if self.__target:
+            logging.info("Set target to {}".format(ant))
+        else:
+            logging.error("Unknown target. Use 'discover' or 'load' first.")
 
     def get_target(self):
         return self.__target
@@ -278,7 +296,7 @@ class MDAP:
             self.__target.credentials = (username, password)
             self.__sender.send_info(self.__target['id'], 1, username, password)
         else:
-            logging.error('Unknown target')
+            logging.error("Unknown target. Use 'set target ip|ant_id' first")
 
     def exec_cmd(self, cmd, username=None, password=None):
         if self.__target:
@@ -289,17 +307,12 @@ class MDAP:
             self.__target.last_cmd = cmd
             self.__sender.send_exec(cmd, self.__target['id'], 1, username, password)
         else:
-            logging.error('Unknown target')
+            logging.error("Unknown target. Use 'set target ip|ant_id' first")
 
     def send_raw(self, verb, ver, ant_id, seq, cmd, username=None, password=None):
-        existing_ant = self.find_ant('id', ant_id)
-
-        ant = existing_ant if existing_ant else MDAP_Ant(ant_id, None)
+        ant = self.__find_or_create_ant('id', ant_id)
         ant.credentials = (username, password)
         ant.last_cmd = cmd
-
-        if not existing_ant:
-            self.ants.append(ant)
 
         self.__sender.send_raw(verb, ver, seq, ant_id, cmd, username, password)
 
@@ -307,7 +320,9 @@ class MDAP:
 
 
 def interactive():
-    mdap = None if 'Windows' in platform.system() else MDAP()
+
+    mdap = MDAP()
+    time.sleep(0.5)
 
     while True:
         cmd = raw_input("mdap > ")
@@ -320,14 +335,14 @@ def interactive():
 
         c = cmd.split()
         method = c[0]
+
         if method == "set":
-            ip = c[2]
             if "interface" == c[1]:
-                mdap = MDAP(ip)
+                mdap = MDAP(c[2])
             elif "target" == c[1]:
-                mdap.set_target(ip)
+                mdap.set_target(c[2])
             else:
-                logging.info("Unknown command")
+                logging.error("Unknown command")
         elif method == "discover":
             mdap.discover()
         elif method == "info":
@@ -342,7 +357,7 @@ def interactive():
             elif len(c) == 4:
                 mdap.exec_cmd(c[1], c[2], c[3])
             else:
-                logging.info("Wrong parameters number")
+                logging.error("Wrong parameters number")
         elif method == "shell":
             target = mdap.get_target()
 
@@ -352,7 +367,7 @@ def interactive():
                 target.credentials = (login, pwd)
 
                 if login is None:
-                    logging.info("Credentials are needed to enter interactive shell mode")
+                    logging.error("Credentials are needed to enter interactive shell mode")
                     continue
 
             while True:
@@ -373,7 +388,7 @@ def interactive():
         elif method == "print":
             print(mdap.ants)
         else:
-            logging.info("Unknown command")
+            logging.error("Unknown command")
 
         time.sleep(SHELL_TIMEOUT)
 
