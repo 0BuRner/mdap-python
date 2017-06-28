@@ -1,6 +1,6 @@
 # MDAP-Python
 
-MDAP-Python is a library written in Python to communicate with the Alcatel/Speedtouch/Thomson/Technicolor routers via the MDAP multicast protocol.
+MDAP-Python is a library written in Python to communicate with the Alcatel/Speedtouch/Thomson/Technicolor routers via the MDAP (Multi-Directory Access Protocol) protocol.
 
 ## Getting Started
 
@@ -8,7 +8,7 @@ MDAP-Python is a library written in Python to communicate with the Alcatel/Speed
 
 There is not prerequisites as this tool uses only standard libraries.
 
-It should work with Python 2.7 =< on Windows and Unix systems (not tested yet).
+It should work with Python 2.7 =< on Windows and Unix systems.
 
 ## Usage
 
@@ -41,7 +41,7 @@ Administrator@192.168.1.1: help         // Depend on the device (same as telnet 
 Automatic discovery mode to detect your target (not working yet)
 
 ```
-mdap-python.py -i 192.168.1.6 -t 192.168.1.1 -m info|exec -c command -u username -p password
+mdap-python.py -i 192.168.1.6 -t 192.168.1.1|ANTID1337 -m info|exec -c command -u username -p password
 ```
 
 ### Programming API
@@ -51,7 +51,7 @@ mdap = MDAP('192.168.1.6')
 mdap.discover()
 mdap.set_target('192.168.1.1')
 mdap.info('admin', '')
-mdap.exec('user help', 'admin', '')
+mdap.exec('user list', 'admin', '')
 ```
 
 ## Technical implementation
@@ -84,7 +84,7 @@ Because of the daemon thread, there is some timeout waiting for devices response
 > **Disclaimer**: information about MDAP protocol is written from scratch with what I discovered when writing this library.
 > It may be wrong or inaccurate. Feel free to update this README file.
 
-MDAP is a multicast UDP stateless protocol. It lies in the "Application Layer" regarding the OSI model.
+MDAP is a UDP stateless protocol. It lies in the "Application Layer" regarding the OSI model.
 It was registered on 2002-02-01 by Johan Deleu at Alcatel to the IANA (Internet Assigned Numbers Authority).
 
 > **Warning**: all requests __and__ responses messages are multicasted !
@@ -101,7 +101,7 @@ It seems IP 239.255.255.0 and PORT 65000 are also used for MDAP/1.0
 - MDAP/1.1
 - MDAP/1.2
 
-I have no idea about the differences between these versions.
+I have no idea about the differences between those versions.
 
 ### Goal
 
@@ -121,7 +121,7 @@ It can also retrieve system info from a device and execute commands as in a teln
     
 ##### Responses
 
-- REPLY-ANT-SEARCH : contains metadata about devices
+- REPLY-ANT-SEARCH : contains metadata about devices (list some of them)
 - REPLY-INFO : (SEQ-NR)
 - REPLY-EXEC-CLI : (SEQ-NR)
 
